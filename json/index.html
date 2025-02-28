@@ -22,7 +22,13 @@
             gap: 20px;
         }
         
-        .buttons {
+        .left-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .buttons, .key-controls {
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -58,13 +64,29 @@
             margin-top: 10px;
             display: none;
         }
+        
+        #keySelector {
+            background-color: #2d2d2d;
+            color: #ffffff;
+            border: 1px solid #404040;
+            padding: 5px;
+            width: 150px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="buttons">
-            <button onclick="formatJson()">Format JSON</button>
-            <button onclick="removeNulls()">Remove Nulls</button>
+        <div class="left-panel">
+            <div class="buttons">
+                <button onclick="formatJson()">Format JSON</button>
+                <button onclick="removeNulls()">Remove Nulls</button>
+                <button onclick="copyJson()">Copy</button>
+            </div>
+            <div class="key-controls">
+                <input list="keys" id="keySelector" placeholder="Select or type key...">
+                <datalist id="keys"></datalist>
+                <button onclick="deleteKey()">Delete Key</button>
+            </div>
         </div>
         <div>
             <h1>JSON Processor</h1>
@@ -79,8 +101,10 @@
     <script>
         const editor = document.getElementById('editor');
         const errorDiv = document.getElementById('error');
+        const keySelector = document.getElementById('keySelector');
+        const keysDatalist = document.getElementById('keys');
 
-        // Add placeholder functionality
+        // Placeholder functionality
         editor.addEventListener('focus', function() {
             if (editor.textContent === 'Enter your JSON here...') {
                 editor.textContent = '';
@@ -93,9 +117,10 @@
             }
         });
 
-        // Highlight on input
+        // Highlight and update keys on input
         editor.addEventListener('input', function() {
             Prism.highlightElement(editor);
+            updateKeyList();
         });
 
         function formatJson() {
@@ -107,6 +132,7 @@
                 const formatted = JSON.stringify(jsonObj, null, 2);
                 editor.textContent = formatted;
                 Prism.highlightElement(editor);
+                updateKeyList();
                 errorDiv.style.display = 'none';
             } catch (e) {
                 errorDiv.textContent = 'Invalid JSON: ' + e.message;
@@ -124,11 +150,24 @@
                 const formatted = JSON.stringify(jsonObj, null, 2);
                 editor.textContent = formatted;
                 Prism.highlightElement(editor);
+                updateKeyList();
                 errorDiv.style.display = 'none';
             } catch (e) {
                 errorDiv.textContent = 'Invalid JSON: ' + e.message;
                 errorDiv.style.display = 'block';
             }
+        }
+
+        function copyJson() {
+            const text = editor.textContent;
+            if (text === 'Enter your JSON here...') return;
+            
+            navigator.clipboard.writeText(text).then(() => {
+                alert('JSON copied to clipboard!');
+            }).catch(err => {
+                errorDiv.textContent = 'Failed to copy: ' + err;
+                errorDiv.style.display = 'block';
+            });
         }
 
         function removeNullValues(obj) {
@@ -141,6 +180,77 @@
                     Object.entries(obj)
                         .filter(([_, value]) => value !== null)
                         .map(([key, value]) => [key, removeNullValues(value)])
+                );
+            }
+            return obj;
+        }
+
+        function updateKeyList() {
+            try {
+                const text = editor.textContent;
+                if (text === 'Enter your JSON here...') return;
+                
+                const jsonObj = JSON.parse(text);
+                const keys = getAllKeyNames(jsonObj);
+                keysDatalist.innerHTML = '';
+                keys.forEach(key => {
+                    const option = document.createElement('option');
+                    option.value = key;
+                    keysDatalist.appendChild(option);
+                });
+            } catch (e) {
+                // Silent fail - don't update keys if JSON is invalid
+            }
+        }
+
+        function getAllKeyNames(obj) {
+            let keys = new Set();
+            if (Array.isArray(obj)) {
+                obj.forEach(item => {
+                    keys = new Set([...keys, ...getAllKeyNames(item)]);
+                });
+            } else if (obj && typeof obj === 'object') {
+                Object.keys(obj).forEach(key => {
+                    keys.add(key);
+                    keys = new Set([...keys, ...getAllKeyNames(obj[key])]);
+                });
+            }
+            return Array.from(keys);
+        }
+
+        function deleteKey() {
+            try {
+                const text = editor.textContent;
+                if (text === 'Enter your JSON here...') return;
+                
+                const keyToDelete = keySelector.value;
+                if (!keyToDelete) {
+                    errorDiv.textContent = 'Please select a key to delete';
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+                
+                let jsonObj = JSON.parse(text);
+                jsonObj = removeKey(jsonObj, keyToDelete);
+                const formatted = JSON.stringify(jsonObj, null, 2);
+                editor.textContent = formatted;
+                Prism.highlightElement(editor);
+                updateKeyList();
+                errorDiv.style.display = 'none';
+            } catch (e) {
+                errorDiv.textContent = 'Invalid JSON or error deleting key: ' + e.message;
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        function removeKey(obj, keyToDelete) {
+            if (Array.isArray(obj)) {
+                return obj.map(item => removeKey(item, keyToDelete));
+            } else if (obj && typeof obj === 'object') {
+                return Object.fromEntries(
+                    Object.entries(obj)
+                        .filter(([key]) => key !== keyToDelete)
+                        .map(([key, value]) => [key, removeKey(value, keyToDelete)])
                 );
             }
             return obj;
