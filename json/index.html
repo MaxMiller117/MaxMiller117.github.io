@@ -53,7 +53,7 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
-            max-width: calc(100% - 445px); /* 180px left + 250px stats + 15px gaps */
+            max-width: calc(100% - 445px);
         }
         
         #editor {
@@ -69,7 +69,7 @@
             outline: none;
             box-sizing: border-box;
             resize: none;
-            max-width: 100%; /* Explicitly bound width */
+            max-width: 100%;
         }
         
         #error {
@@ -156,12 +156,68 @@
             updateStats();
         });
 
-        // Highlight, update keys, and stats on input
-        editor.addEventListener('input', function() {
+        // Highlight, update keys, and stats on input with improved cursor preservation
+        editor.addEventListener('input', function(e) {
+            const selection = window.getSelection();
+            const rangeBefore = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+            const textBefore = editor.textContent;
+            const cursorPositionBefore = rangeBefore ? getCursorPosition(textBefore, rangeBefore) : 0;
+
             Prism.highlightElement(editor);
+
+            // Restore cursor position
+            const textAfter = editor.textContent;
+            if (textBefore === textAfter && rangeBefore) { // Only restore if content hasn't changed significantly
+                const newRange = setCursorPosition(editor, cursorPositionBefore);
+                selection.removeAllRanges();
+                selection.addRange(newRange);
+            }
+
             updateKeyList();
             updateStats();
         });
+
+        // Get cursor position as an offset in the text content
+        function getCursorPosition(text, range) {
+            const tempRange = document.createRange();
+            tempRange.setStart(editor, 0);
+            tempRange.setEnd(range.startContainer, range.startOffset);
+            return tempRange.toString().length;
+        }
+
+        // Set cursor position based on offset
+        function setCursorPosition(element, offset) {
+            const range = document.createRange();
+            const selection = window.getSelection();
+            let remaining = offset;
+            let found = false;
+
+            function traverseNodes(node) {
+                if (found || remaining < 0) return;
+
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const textLength = node.textContent.length;
+                    if (remaining <= textLength) {
+                        range.setStart(node, remaining);
+                        range.setEnd(node, remaining);
+                        found = true;
+                    } else {
+                        remaining -= textLength;
+                    }
+                } else {
+                    for (let i = 0; i < node.childNodes.length && !found; i++) {
+                        traverseNodes(node.childNodes[i]);
+                    }
+                }
+            }
+
+            traverseNodes(element);
+            if (!found && element.textContent.length > 0) {
+                range.setStart(element.lastChild, element.lastChild.textContent.length);
+                range.setEnd(element.lastChild, element.lastChild.textContent.length);
+            }
+            return range;
+        }
 
         function formatJson() {
             try {
