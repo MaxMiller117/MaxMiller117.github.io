@@ -18,30 +18,14 @@
         .container {
             max-width: 800px;
             margin: 0 auto;
-        }
-        
-        #jsonInput {
-            width: 100%;
-            height: 300px;
-            background-color: #2d2d2d;
-            color: #ffffff;
-            border: 1px solid #404040;
-            padding: 10px;
-            margin: 10px 0;
-            resize: vertical;
-            font-family: 'Courier New', Courier, monospace;
-        }
-        
-        pre {
-            margin: 10px 0;
-            padding: 10px;
-            background-color: #2d2d2d;
-            border: 1px solid #404040;
-            overflow: auto;
+            display: flex;
+            gap: 20px;
         }
         
         .buttons {
-            margin: 10px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
         
         button {
@@ -49,13 +33,24 @@
             color: #ffffff;
             border: none;
             padding: 10px 20px;
-            margin-right: 10px;
             cursor: pointer;
             transition: background-color 0.3s;
         }
         
         button:hover {
             background-color: #606060;
+        }
+        
+        #editor {
+            flex: 1;
+            min-height: 300px;
+            background-color: #2d2d2d;
+            border: 1px solid #404040;
+            padding: 10px;
+            font-family: 'Courier New', Courier, monospace;
+            white-space: pre;
+            overflow: auto;
+            outline: none;
         }
         
         #error {
@@ -67,39 +62,51 @@
 </head>
 <body>
     <div class="container">
-        <h1>JSON Processor</h1>
-        <textarea id="jsonInput" placeholder="Enter your JSON here..."></textarea>
-        <pre><code class="language-json" id="highlighted"></code></pre>
         <div class="buttons">
             <button onclick="formatJson()">Format JSON</button>
             <button onclick="removeNulls()">Remove Nulls</button>
         </div>
-        <div id="error"></div>
+        <div>
+            <h1>JSON Processor</h1>
+            <div contenteditable="true" id="editor" class="language-json" placeholder="Enter your JSON here..."></div>
+            <div id="error"></div>
+        </div>
     </div>
 
     <!-- Prism JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
     <script>
-        const input = document.getElementById('jsonInput');
-        const highlighted = document.getElementById('highlighted');
+        const editor = document.getElementById('editor');
         const errorDiv = document.getElementById('error');
 
-        // Update highlighting on input
-        input.addEventListener('input', updateHighlighting);
+        // Add placeholder functionality
+        editor.addEventListener('focus', function() {
+            if (editor.textContent === 'Enter your JSON here...') {
+                editor.textContent = '';
+            }
+        });
         
-        function updateHighlighting() {
-            const text = input.value;
-            highlighted.textContent = text;
-            Prism.highlightElement(highlighted);
-        }
+        editor.addEventListener('blur', function() {
+            if (editor.textContent.trim() === '') {
+                editor.textContent = 'Enter your JSON here...';
+            }
+        });
+
+        // Highlight on input
+        editor.addEventListener('input', function() {
+            Prism.highlightElement(editor);
+        });
 
         function formatJson() {
             try {
-                const jsonObj = JSON.parse(input.value);
+                const text = editor.textContent;
+                if (text === 'Enter your JSON here...') return;
+                
+                const jsonObj = JSON.parse(text);
                 const formatted = JSON.stringify(jsonObj, null, 2);
-                input.value = formatted;
-                updateHighlighting();
+                editor.textContent = formatted;
+                Prism.highlightElement(editor);
                 errorDiv.style.display = 'none';
             } catch (e) {
                 errorDiv.textContent = 'Invalid JSON: ' + e.message;
@@ -109,11 +116,14 @@
 
         function removeNulls() {
             try {
-                let jsonObj = JSON.parse(input.value);
+                const text = editor.textContent;
+                if (text === 'Enter your JSON here...') return;
+                
+                let jsonObj = JSON.parse(text);
                 jsonObj = removeNullValues(jsonObj);
                 const formatted = JSON.stringify(jsonObj, null, 2);
-                input.value = formatted;
-                updateHighlighting();
+                editor.textContent = formatted;
+                Prism.highlightElement(editor);
                 errorDiv.style.display = 'none';
             } catch (e) {
                 errorDiv.textContent = 'Invalid JSON: ' + e.message;
@@ -136,8 +146,11 @@
             return obj;
         }
 
-        // Initial highlighting
-        updateHighlighting();
+        // Initial setup
+        if (editor.textContent.trim() === '') {
+            editor.textContent = 'Enter your JSON here...';
+        }
+        Prism.highlightElement(editor);
     </script>
 </body>
 </html>
