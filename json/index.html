@@ -11,14 +11,15 @@
             background-color: #1a1a1a;
             color: #ffffff;
             font-family: Arial, sans-serif;
-            padding: 10px;
+            padding: 0;
             margin: 0;
+            display: flex;
+            min-height: 100vh;
         }
         
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
             display: flex;
+            width: 100%;
             gap: 15px;
         }
         
@@ -27,6 +28,8 @@
             display: flex;
             flex-direction: column;
             gap: 15px;
+            padding: 10px;
+            flex-shrink: 0;
         }
         
         .buttons, .key-controls {
@@ -53,7 +56,8 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
-            max-width: calc(100% - 445px);
+            padding: 10px;
+            min-width: 0; /* Prevent flex overflow */
         }
         
         #editor {
@@ -69,7 +73,8 @@
             outline: none;
             box-sizing: border-box;
             resize: none;
-            max-width: 100%;
+            max-width: 100%; /* Ensure it doesn't exceed parent */
+            min-width: 0; /* Allow shrinking within flex */
         }
         
         #error {
@@ -92,6 +97,7 @@
             background-color: #2d2d2d;
             padding: 10px;
             border: 1px solid #404040;
+            flex-shrink: 0;
         }
         
         .stats-panel h3 {
@@ -108,6 +114,7 @@
         <div class="left-panel">
             <div class="buttons">
                 <button onclick="formatJson()">Format JSON</button>
+                <button onclick="minifyJson()">Minify JSON</button>
                 <button onclick="removeNulls()">Remove Nulls</button>
                 <button onclick="copyJson()">Copy</button>
             </div>
@@ -156,7 +163,7 @@
             updateStats();
         });
 
-        // Highlight, update keys, and stats on input with improved cursor preservation
+        // Highlight, update keys, and stats on input with cursor preservation
         editor.addEventListener('input', function(e) {
             const selection = window.getSelection();
             const rangeBefore = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
@@ -165,9 +172,8 @@
 
             Prism.highlightElement(editor);
 
-            // Restore cursor position
             const textAfter = editor.textContent;
-            if (textBefore === textAfter && rangeBefore) { // Only restore if content hasn't changed significantly
+            if (textBefore === textAfter && rangeBefore) {
                 const newRange = setCursorPosition(editor, cursorPositionBefore);
                 selection.removeAllRanges();
                 selection.addRange(newRange);
@@ -177,7 +183,6 @@
             updateStats();
         });
 
-        // Get cursor position as an offset in the text content
         function getCursorPosition(text, range) {
             const tempRange = document.createRange();
             tempRange.setStart(editor, 0);
@@ -185,7 +190,6 @@
             return tempRange.toString().length;
         }
 
-        // Set cursor position based on offset
         function setCursorPosition(element, offset) {
             const range = document.createRange();
             const selection = window.getSelection();
@@ -227,6 +231,24 @@
                 const jsonObj = JSON.parse(text);
                 const formatted = JSON.stringify(jsonObj, null, 2);
                 editor.textContent = formatted;
+                Prism.highlightElement(editor);
+                updateKeyList();
+                updateStats();
+                errorDiv.style.display = 'none';
+            } catch (e) {
+                errorDiv.textContent = 'Invalid JSON: ' + e.message;
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        function minifyJson() {
+            try {
+                const text = editor.textContent;
+                if (text === 'Enter your JSON here...') return;
+                
+                const jsonObj = JSON.parse(text);
+                const minified = JSON.stringify(jsonObj);
+                editor.textContent = minified;
                 Prism.highlightElement(editor);
                 updateKeyList();
                 updateStats();
