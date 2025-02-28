@@ -11,34 +11,35 @@
             background-color: #1a1a1a;
             color: #ffffff;
             font-family: Arial, sans-serif;
-            padding: 20px;
+            padding: 10px;
             margin: 0;
         }
         
         .container {
-            max-width: 800px;
+            max-width: 1200px;
             margin: 0 auto;
             display: flex;
-            gap: 20px;
+            gap: 15px;
         }
         
         .left-panel {
+            width: 180px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 15px;
         }
         
         .buttons, .key-controls {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
         }
         
         button {
             background-color: #4a4a4a;
             color: #ffffff;
             border: none;
-            padding: 10px 20px;
+            padding: 8px 12px;
             cursor: pointer;
             transition: background-color 0.3s;
         }
@@ -47,21 +48,33 @@
             background-color: #606060;
         }
         
-        #editor {
+        .main-panel {
             flex: 1;
-            min-height: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: calc(100% - 445px); /* 180px left + 250px stats + 15px gaps */
+        }
+        
+        #editor {
+            width: 100%;
+            height: 400px;
             background-color: #2d2d2d;
             border: 1px solid #404040;
             padding: 10px;
             font-family: 'Courier New', Courier, monospace;
-            white-space: pre;
-            overflow: auto;
+            white-space: pre-wrap;
+            overflow-y: auto;
+            overflow-x: auto;
             outline: none;
+            box-sizing: border-box;
+            resize: none;
+            max-width: 100%; /* Explicitly bound width */
         }
         
         #error {
             color: #ff4444;
-            margin-top: 10px;
+            margin-top: 5px;
             display: none;
         }
         
@@ -70,7 +83,23 @@
             color: #ffffff;
             border: 1px solid #404040;
             padding: 5px;
-            width: 150px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .stats-panel {
+            width: 250px;
+            background-color: #2d2d2d;
+            padding: 10px;
+            border: 1px solid #404040;
+        }
+        
+        .stats-panel h3 {
+            margin: 0 0 10px 0;
+        }
+        
+        .stats-panel p {
+            margin: 5px 0;
         }
     </style>
 </head>
@@ -88,10 +117,16 @@
                 <button onclick="deleteKey()">Delete Key</button>
             </div>
         </div>
-        <div>
+        <div class="main-panel">
             <h1>JSON Processor</h1>
             <div contenteditable="true" id="editor" class="language-json" placeholder="Enter your JSON here..."></div>
             <div id="error"></div>
+        </div>
+        <div class="stats-panel">
+            <h3>Stats</h3>
+            <p>Characters: <span id="charCount">0</span></p>
+            <p>Lines: <span id="lineCount">0</span></p>
+            <p>Data Size: <span id="dataSize">0 B</span></p>
         </div>
     </div>
 
@@ -103,6 +138,9 @@
         const errorDiv = document.getElementById('error');
         const keySelector = document.getElementById('keySelector');
         const keysDatalist = document.getElementById('keys');
+        const charCount = document.getElementById('charCount');
+        const lineCount = document.getElementById('lineCount');
+        const dataSize = document.getElementById('dataSize');
 
         // Placeholder functionality
         editor.addEventListener('focus', function() {
@@ -115,12 +153,14 @@
             if (editor.textContent.trim() === '') {
                 editor.textContent = 'Enter your JSON here...';
             }
+            updateStats();
         });
 
-        // Highlight and update keys on input
+        // Highlight, update keys, and stats on input
         editor.addEventListener('input', function() {
             Prism.highlightElement(editor);
             updateKeyList();
+            updateStats();
         });
 
         function formatJson() {
@@ -133,6 +173,7 @@
                 editor.textContent = formatted;
                 Prism.highlightElement(editor);
                 updateKeyList();
+                updateStats();
                 errorDiv.style.display = 'none';
             } catch (e) {
                 errorDiv.textContent = 'Invalid JSON: ' + e.message;
@@ -151,6 +192,7 @@
                 editor.textContent = formatted;
                 Prism.highlightElement(editor);
                 updateKeyList();
+                updateStats();
                 errorDiv.style.display = 'none';
             } catch (e) {
                 errorDiv.textContent = 'Invalid JSON: ' + e.message;
@@ -236,6 +278,7 @@
                 editor.textContent = formatted;
                 Prism.highlightElement(editor);
                 updateKeyList();
+                updateStats();
                 errorDiv.style.display = 'none';
             } catch (e) {
                 errorDiv.textContent = 'Invalid JSON or error deleting key: ' + e.message;
@@ -256,11 +299,33 @@
             return obj;
         }
 
+        function updateStats() {
+            const text = editor.textContent;
+            if (text === 'Enter your JSON here...') {
+                charCount.textContent = '0';
+                lineCount.textContent = '0';
+                dataSize.textContent = '0 B';
+                return;
+            }
+            
+            charCount.textContent = text.length;
+            lineCount.textContent = text.split('\n').length;
+            const bytes = new TextEncoder().encode(text).length;
+            dataSize.textContent = formatSize(bytes);
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
         // Initial setup
         if (editor.textContent.trim() === '') {
             editor.textContent = 'Enter your JSON here...';
         }
         Prism.highlightElement(editor);
+        updateStats();
     </script>
 </body>
 </html>
