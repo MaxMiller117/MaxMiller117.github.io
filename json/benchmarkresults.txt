@@ -1,0 +1,28 @@
+3/2/2025 - 060c14f
+Benchmarking Small payload (size: 60 B)...
+index.html:440   Parse time: 0.00ms
+index.html:446   Format time: 0.00ms
+index.html:452   Minify time: 0.00ms
+index.html:459   Highlight time: 0.70ms
+index.html:465   Remove Nulls time: 0.10ms
+index.html:474   Delete Key (name) time: 0.10ms
+index.html:480   Total time for Small: 1.10ms
+index.html:433 
+Benchmarking Medium payload (size: 49.5 KB)...
+index.html:440   Parse time: 0.20ms
+index.html:446   Format time: 0.20ms
+index.html:452   Minify time: 0.20ms
+index.html:459   Highlight time: 37.90ms
+index.html:465   Remove Nulls time: 5.40ms
+index.html:474   Delete Key (key0) time: 27.40ms
+index.html:480   Total time for Medium: 71.50ms
+index.html:433 
+Benchmarking Large payload (size: 5.4 MB)...
+index.html:440   Parse time: 35.00ms
+index.html:446   Format time: 33.60ms
+index.html:452   Minify time: 27.70ms
+index.html:459   Highlight time: 3740.90ms
+index.html:465   Remove Nulls time: 163.00ms
+index.html:474   Delete Key (key0) time: 212673.40ms
+index.html:480   Total time for Large: 216674.20ms
+index.html:508 
