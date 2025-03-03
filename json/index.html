@@ -57,7 +57,7 @@
             flex-direction: column;
             gap: 10px;
             padding: 10px;
-            min-width: 0; /* Prevent flex overflow */
+            min-width: 0;
         }
         
         #editor {
@@ -73,8 +73,8 @@
             outline: none;
             box-sizing: border-box;
             resize: none;
-            max-width: 100%; /* Ensure it doesn't exceed parent */
-            min-width: 0; /* Allow shrinking within flex */
+            max-width: 100%;
+            min-width: 0;
         }
         
         #error {
@@ -98,14 +98,21 @@
             padding: 10px;
             border: 1px solid #404040;
             flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
         
         .stats-panel h3 {
-            margin: 0 0 10px 0;
+            margin: 0;
         }
         
         .stats-panel p {
             margin: 5px 0;
+        }
+        
+        .stats-panel button {
+            margin-top: auto;
         }
     </style>
 </head>
@@ -134,6 +141,7 @@
             <p>Characters: <span id="charCount">0</span></p>
             <p>Lines: <span id="lineCount">0</span></p>
             <p>Data Size: <span id="dataSize">0 B</span></p>
+            <button onclick="runBenchmark()">Run Benchmark</button>
         </div>
     </div>
 
@@ -396,6 +404,109 @@
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        // Generate test payloads
+        function generatePayload(size) {
+            if (size === 'small') {
+                return JSON.stringify({
+                    name: "John",
+                    age: 30,
+                    data: { value: null, active: true }
+                });
+            } else if (size === 'medium') {
+                const obj = {};
+                for (let i = 0; i < 1000; i++) {
+                    obj[`key${i}`] = { id: i, value: `test${i}`, extra: null };
+                }
+                return JSON.stringify(obj);
+            } else if (size === 'large') {
+                const obj = {};
+                for (let i = 0; i < 100000; i++) {
+                    obj[`key${i}`] = { id: i, value: `test${i}`, extra: null };
+                }
+                return JSON.stringify(obj);
+            }
+        }
+
+        function benchmarkPayload(text, label) {
+            console.log(`\nBenchmarking ${label} payload (size: ${formatSize(new TextEncoder().encode(text).length)})...`);
+            const startTime = performance.now();
+
+            // Test 1: Parsing
+            let parseStart = performance.now();
+            let jsonObj = JSON.parse(text);
+            let parseEnd = performance.now();
+            console.log(`  Parse time: ${(parseEnd - parseStart).toFixed(2)}ms`);
+
+            // Test 2: Formatting
+            let formatStart = performance.now();
+            const formatted = JSON.stringify(jsonObj, null, 2);
+            let formatEnd = performance.now();
+            console.log(`  Format time: ${(formatEnd - formatStart).toFixed(2)}ms`);
+
+            // Test 3: Minifying
+            let minifyStart = performance.now();
+            const minified = JSON.stringify(jsonObj);
+            let minifyEnd = performance.now();
+            console.log(`  Minify time: ${(minifyEnd - minifyStart).toFixed(2)}ms`);
+
+            // Test 4: Highlighting
+            let highlightStart = performance.now();
+            editor.textContent = formatted;
+            Prism.highlightElement(editor);
+            let highlightEnd = performance.now();
+            console.log(`  Highlight time: ${(highlightEnd - highlightStart).toFixed(2)}ms`);
+
+            // Test 5: Null Removal
+            let nullStart = performance.now();
+            const nullRemoved = removeNullValues(JSON.parse(JSON.stringify(jsonObj)));
+            let nullEnd = performance.now();
+            console.log(`  Remove Nulls time: ${(nullEnd - nullStart).toFixed(2)}ms`);
+
+            // Test 6: Key Deletion (if keys exist)
+            let deleteStart = performance.now();
+            const keys = getAllKeyNames(jsonObj);
+            if (keys.length > 0) {
+                const keyToDelete = keys[0];
+                const deleted = removeKey(JSON.parse(JSON.stringify(jsonObj)), keyToDelete);
+                let deleteEnd = performance.now();
+                console.log(`  Delete Key (${keyToDelete}) time: ${(deleteEnd - deleteStart).toFixed(2)}ms`);
+            } else {
+                console.log('  Delete Key skipped: No keys found');
+            }
+
+            const endTime = performance.now();
+            console.log(`  Total time for ${label}: ${(endTime - startTime).toFixed(2)}ms`);
+        }
+
+        function runBenchmark() {
+            const originalContent = editor.textContent;
+            const hasUserContent = originalContent !== 'Enter your JSON here...' && originalContent.trim() !== '';
+            console.log('Starting benchmark suite...');
+
+            // Run benchmarks on generated payloads
+            benchmarkPayload(generatePayload('small'), 'Small');
+            benchmarkPayload(generatePayload('medium'), 'Medium');
+            benchmarkPayload(generatePayload('large'), 'Large');
+
+            // Run benchmark on user content if present
+            if (hasUserContent) {
+                try {
+                    JSON.parse(originalContent); // Validate user JSON
+                    benchmarkPayload(originalContent, 'User');
+                } catch (e) {
+                    console.log('\nUser content benchmark skipped: Invalid JSON -', e.message);
+                }
+            }
+
+            // Restore original content
+            editor.textContent = originalContent;
+            Prism.highlightElement(editor);
+            updateStats();
+
+            console.log('\nBenchmark suite complete. Check console for results.');
+            alert('Benchmark suite complete! Check console (F12) for results.');
         }
 
         // Initial setup
