@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JSON Processor</title>
+    <title>JSON Processor with Shadow DOM</title>
     <!-- Prism CSS -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <style>
@@ -60,23 +60,6 @@
             min-width: 0;
         }
         
-        #editor {
-            width: 100%;
-            height: 400px;
-            background-color: #2d2d2d;
-            border: 1px solid #404040;
-            padding: 10px;
-            font-family: 'Courier New', Courier, monospace;
-            white-space: pre-wrap;
-            overflow-y: auto;
-            overflow-x: auto;
-            outline: none;
-            box-sizing: border-box;
-            resize: none;
-            max-width: 100%;
-            min-width: 0;
-        }
-        
         #error {
             color: #ff4444;
             margin-top: 5px;
@@ -124,6 +107,7 @@
                 <button onclick="minifyJson()">Minify JSON</button>
                 <button onclick="removeNulls()">Remove Nulls</button>
                 <button onclick="copyJson()">Copy</button>
+                <button onclick="highlightJson()">Highlight</button>
             </div>
             <div class="key-controls">
                 <input list="keys" id="keySelector" placeholder="Select or type key...">
@@ -133,7 +117,7 @@
         </div>
         <div class="main-panel">
             <h1>JSON Processor</h1>
-            <div contenteditable="true" id="editor" class="language-json" placeholder="Enter your JSON here..."></div>
+            <json-editor id="editor"></json-editor>
             <div id="error"></div>
         </div>
         <div class="stats-panel">
@@ -149,7 +133,56 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
     <script>
-        const editor = document.getElementById('editor');
+        class JsonEditor extends HTMLElement {
+            constructor() {
+                super();
+                const shadow = this.attachShadow({ mode: 'open' });
+                shadow.innerHTML = `
+                    <style>
+                        #editor {
+                            width: 100%;
+                            height: 400px;
+                            background-color: #2d2d2d;
+                            border: 1px solid #404040;
+                            padding: 10px;
+                            font-family: 'Courier New', Courier, monospace;
+                            white-space: pre-wrap;
+                            overflow-y: auto;
+                            overflow-x: auto;
+                            outline: none;
+                            box-sizing: border-box;
+                            resize: vertical;
+                            color: #ffffff;
+                        }
+                        .token.property { color: #f8c555; }
+                        .token.string { color: #7ec699; }
+                        .token.number { color: #f08d49; }
+                        .token.boolean { color: #cc99cd; }
+                        .token.punctuation { color: #cccccc; }
+                    </style>
+                    <div id="editor" contenteditable="true" class="language-json"></div>
+                `;
+                this.editor = shadow.querySelector('#editor');
+            }
+
+            get textContent() {
+                return this.editor.textContent;
+            }
+
+            set textContent(value) {
+                this.editor.textContent = value;
+            }
+
+            highlight() {
+                Prism.highlightElement(this.editor);
+            }
+        }
+
+        customElements.define('json-editor', JsonEditor);
+
+        // References
+        const editorElement = document.getElementById('editor');
+        const editor = editorElement.editor;
         const errorDiv = document.getElementById('error');
         const keySelector = document.getElementById('keySelector');
         const keysDatalist = document.getElementById('keys');
@@ -162,15 +195,14 @@
         let highlightTimeout;
         let statsTimeout;
         let isLargePayload = false;
-        const LARGE_PAYLOAD_THRESHOLD = 1000000; // 1MB in characters
+        const LARGE_PAYLOAD_THRESHOLD = 10000;
 
-        // Placeholder functionality
         editor.addEventListener('focus', function() {
             if (editor.textContent === 'Enter your JSON here...') {
                 editor.textContent = '';
             }
         });
-        
+
         editor.addEventListener('blur', function() {
             if (editor.textContent.trim() === '') {
                 editor.textContent = 'Enter your JSON here...';
@@ -178,97 +210,37 @@
             updateStats();
         });
 
-        // Debounced highlighting and updates on input
-        editor.addEventListener('input', function(e) {
+        editor.addEventListener('input', function() {
             const text = editor.textContent;
-            const selection = window.getSelection();
-            const rangeBefore = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
-            const cursorPositionBefore = rangeBefore ? getCursorPosition(text, rangeBefore) : 0;
-
-            if (text.length > LARGE_PAYLOAD_THRESHOLD && !isLargePayload) {
+            if (text.length > LARGE_PAYLOAD_THRESHOLD) {
                 isLargePayload = true;
-                errorDiv.textContent = 'Large payload detected; real-time highlighting disabled for performance.';
+                errorDiv.textContent = 'Large payload detected; real-time highlighting disabled. Click "Highlight" to update.';
                 errorDiv.style.display = 'block';
-            } else if (text.length <= LARGE_PAYLOAD_THRESHOLD && isLargePayload) {
+            } else {
                 isLargePayload = false;
                 errorDiv.style.display = 'none';
-            }
-
-            if (!isLargePayload) {
                 clearTimeout(highlightTimeout);
                 highlightTimeout = setTimeout(() => {
-                    Prism.highlightElement(editor);
-                    const textAfter = editor.textContent;
-                    if (text === textAfter && rangeBefore) {
-                        const newRange = setCursorPosition(editor, cursorPositionBefore);
-                        selection.removeAllRanges();
-                        selection.addRange(newRange);
-                    }
+                    editorElement.highlight();
                 }, 300);
             }
-
-            lastText = ''; // Invalidate cache on edit
-            updateStats(); // Throttled internally
+            lastText = '';
+            updateStats();
         });
 
-        function getCursorPosition(text, range) {
-            const tempRange = document.createRange();
-            tempRange.setStart(editor, 0);
-            tempRange.setEnd(range.startContainer, range.startOffset);
-            return tempRange.toString().length;
-        }
-
-        function setCursorPosition(element, offset) {
-            const range = document.createRange();
-            const selection = window.getSelection();
-            let remaining = offset;
-            let found = false;
-
-            function traverseNodes(node) {
-                if (found || remaining < 0) return;
-
-                if (node.nodeType === Node.TEXT_NODE) {
-                    const textLength = node.textContent.length;
-                    if (remaining <= textLength) {
-                        range.setStart(node, remaining);
-                        range.setEnd(node, remaining);
-                        found = true;
-                    } else {
-                        remaining -= textLength;
-                    }
-                } else {
-                    for (let i = 0; i < node.childNodes.length && !found; i++) {
-                        traverseNodes(node.childNodes[i]);
-                    }
-                }
-            }
-
-            traverseNodes(element);
-            if (!found && element.textContent.length > 0) {
-                range.setStart(element.lastChild, element.lastChild.textContent.length);
-                range.setEnd(element.lastChild, element.lastChild.textContent.length);
-            }
-            return range;
-        }
-
-        function getParsedJson(text) {
-            if (text !== lastText || cachedJson === null) {
-                cachedJson = JSON.parse(text);
-                lastText = text;
-            }
-            return cachedJson;
+        function highlightJson() {
+            editorElement.highlight();
         }
 
         function formatJson() {
+            const text = editor.textContent;
+            if (text === 'Enter your JSON here...') return;
             try {
-                const text = editor.textContent;
-                if (text === 'Enter your JSON here...') return;
-                
-                const jsonObj = getParsedJson(text);
-                const formatted = JSON.stringify(jsonObj, null, 2);
-                editor.textContent = formatted;
-                if (!isLargePayload) Prism.highlightElement(editor);
-                updateKeyList();
+                const parsed = JSON.parse(text);
+                editor.textContent = JSON.stringify(parsed, null, 2);
+                editorElement.highlight();
+                cachedJson = parsed;
+                lastText = editor.textContent;
                 updateStats();
                 errorDiv.style.display = 'none';
             } catch (e) {
@@ -278,15 +250,14 @@
         }
 
         function minifyJson() {
+            const text = editor.textContent;
+            if (text === 'Enter your JSON here...') return;
             try {
-                const text = editor.textContent;
-                if (text === 'Enter your JSON here...') return;
-                
-                const jsonObj = getParsedJson(text);
-                const minified = JSON.stringify(jsonObj);
-                editor.textContent = minified;
-                if (!isLargePayload) Prism.highlightElement(editor);
-                updateKeyList();
+                const parsed = JSON.parse(text);
+                editor.textContent = JSON.stringify(parsed);
+                editorElement.highlight();
+                cachedJson = parsed;
+                lastText = editor.textContent;
                 updateStats();
                 errorDiv.style.display = 'none';
             } catch (e) {
@@ -296,16 +267,15 @@
         }
 
         function removeNulls() {
+            const text = editor.textContent;
+            if (text === 'Enter your JSON here...') return;
             try {
-                const text = editor.textContent;
-                if (text === 'Enter your JSON here...') return;
-                
-                let jsonObj = getParsedJson(text);
-                jsonObj = removeNullValues(jsonObj);
-                cachedJson = jsonObj; // Update cache
-                lastText = editor.textContent = JSON.stringify(jsonObj, null, 2);
-                if (!isLargePayload) Prism.highlightElement(editor);
-                updateKeyList();
+                const parsed = JSON.parse(text);
+                const cleaned = removeNullValues(parsed);
+                editor.textContent = JSON.stringify(cleaned, null, 2);
+                editorElement.highlight();
+                cachedJson = cleaned;
+                lastText = editor.textContent;
                 updateStats();
                 errorDiv.style.display = 'none';
             } catch (e) {
@@ -314,103 +284,109 @@
             }
         }
 
-        function copyJson() {
-            const text = editor.textContent;
-            if (text === 'Enter your JSON here...') return;
-            
-            navigator.clipboard.writeText(text).then(() => {
-                alert('JSON copied to clipboard!');
-            }).catch(err => {
-                errorDiv.textContent = 'Failed to copy: ' + err;
-                errorDiv.style.display = 'block';
-            });
-        }
-
         function removeNullValues(obj) {
             if (Array.isArray(obj)) {
-                return obj
-                    .filter(item => item !== null)
-                    .map(item => removeNullValues(item));
+                return obj.filter(item => item !== null).map(item => removeNullValues(item));
             } else if (obj && typeof obj === 'object') {
-                return Object.fromEntries(
-                    Object.entries(obj)
-                        .filter(([_, value]) => value !== null)
-                        .map(([key, value]) => [key, removeNullValues(value)])
-                );
+                const result = {};
+                for (const [key, value] of Object.entries(obj)) {
+                    if (value !== null) {
+                        result[key] = removeNullValues(value);
+                    }
+                }
+                return result;
             }
             return obj;
         }
 
-        function updateKeyList() {
-            try {
-                const text = editor.textContent;
-                if (text === 'Enter your JSON here...') return;
-                
-                const jsonObj = getParsedJson(text);
-                const keys = getAllKeyNames(jsonObj);
-                keysDatalist.innerHTML = '';
-                keys.forEach(key => {
-                    const option = document.createElement('option');
-                    option.value = key;
-                    keysDatalist.appendChild(option);
-                });
-            } catch (e) {
-                // Silent fail
-            }
+        function copyJson() {
+            const text = editor.textContent;
+            if (text === 'Enter your JSON here...') return;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('JSON copied to clipboard!');
+            });
         }
 
-        function getAllKeyNames(obj) {
+        function updateKeyList(jsonObj) {
+            const keys = getAllKeyNames(jsonObj);
+            keysDatalist.innerHTML = '';
+            keys.forEach(key => {
+                const option = document.createElement('option');
+                option.value = key;
+                keysDatalist.appendChild(option);
+            });
+        }
+
+        function getAllKeyNames(obj, prefix = '') {
             let keys = new Set();
             if (Array.isArray(obj)) {
-                obj.forEach(item => {
-                    keys = new Set([...keys, ...getAllKeyNames(item)]);
+                obj.forEach((item, index) => {
+                    const newPrefix = `${prefix}[${index}]`;
+                    if (typeof item === 'object' && item !== null) {
+                        getAllKeyNames(item, newPrefix).forEach(k => keys.add(k));
+                    }
                 });
             } else if (obj && typeof obj === 'object') {
-                Object.keys(obj).forEach(key => {
-                    keys.add(key);
-                    keys = new Set([...keys, ...getAllKeyNames(obj[key])]);
-                });
+                for (const [key, value] of Object.entries(obj)) {
+                    const fullKey = prefix ? `${prefix}.${key}` : key;
+                    keys.add(fullKey);
+                    if (typeof value === 'object' && value !== null) {
+                        getAllKeyNames(value, fullKey).forEach(k => keys.add(k));
+                    }
+                }
             }
             return Array.from(keys);
         }
 
         function deleteKey() {
+            const keyPath = keySelector.value;
+            if (!keyPath || !cachedJson) return;
             try {
-                const text = editor.textContent;
-                if (text === 'Enter your JSON here...') return;
-                
-                const keyToDelete = keySelector.value;
-                if (!keyToDelete) {
-                    errorDiv.textContent = 'Please select a key to delete';
-                    errorDiv.style.display = 'block';
-                    return;
-                }
-                
-                let jsonObj = getParsedJson(text);
-                jsonObj = removeKey(jsonObj, keyToDelete);
-                cachedJson = jsonObj; // Update cache
-                lastText = editor.textContent = JSON.stringify(jsonObj, null, 2);
-                if (!isLargePayload) Prism.highlightElement(editor);
-                updateKeyList();
+                const newJson = JSON.parse(JSON.stringify(cachedJson));
+                removeKey(newJson, keyPath.split('.'));
+                editor.textContent = JSON.stringify(newJson, null, 2);
+                editorElement.highlight();
+                cachedJson = newJson;
+                lastText = editor.textContent;
                 updateStats();
+                updateKeyList(cachedJson);
                 errorDiv.style.display = 'none';
             } catch (e) {
-                errorDiv.textContent = 'Invalid JSON or error deleting key: ' + e.message;
+                errorDiv.textContent = 'Error deleting key: ' + e.message;
                 errorDiv.style.display = 'block';
             }
         }
 
-        function removeKey(obj, keyToDelete) {
-            if (Array.isArray(obj)) {
-                return obj.map(item => removeKey(item, keyToDelete));
-            } else if (obj && typeof obj === 'object') {
-                return Object.fromEntries(
-                    Object.entries(obj)
-                        .filter(([key]) => key !== keyToDelete)
-                        .map(([key, value]) => [key, removeKey(value, keyToDelete)])
-                );
+        function removeKey(obj, keyPath) {
+            if (keyPath.length === 0) return;
+            let current = obj;
+            for (let i = 0; i < keyPath.length - 1; i++) {
+                let key = keyPath[i];
+                if (key.includes('[')) {
+                    const arrayMatch = key.match(/^(.*?)\[(\d+)\]$/);
+                    if (arrayMatch) {
+                        const arrayKey = arrayMatch[1] || '';
+                        const index = parseInt(arrayMatch[2], 10);
+                        if (arrayKey) current = current[arrayKey];
+                        current = current[index];
+                    }
+                } else {
+                    current = current[key];
+                }
+                if (!current) return;
             }
-            return obj;
+            const lastKey = keyPath[keyPath.length - 1];
+            if (lastKey.includes('[')) {
+                const arrayMatch = lastKey.match(/^(.*?)\[(\d+)\]$/);
+                if (arrayMatch) {
+                    const arrayKey = arrayMatch[1] || '';
+                    const index = parseInt(arrayMatch[2], 10);
+                    if (arrayKey) current = current[arrayKey];
+                    if (Array.isArray(current)) current.splice(index, 1);
+                }
+            } else {
+                delete current[lastKey];
+            }
         }
 
         function updateStats() {
@@ -424,120 +400,76 @@
                     return;
                 }
                 charCount.textContent = text.length;
-                lineCount.textContent = text.split('\n').length;
+                lineCount.textContent = 'N/A';
                 const bytes = new TextEncoder().encode(text).length;
                 dataSize.textContent = formatSize(bytes);
+
+                if (text !== lastText) {
+                    try {
+                        cachedJson = JSON.parse(text);
+                        updateKeyList(cachedJson);
+                        lastText = text;
+                    } catch (e) {
+                        cachedJson = null;
+                    }
+                }
             }, 500);
         }
 
         function formatSize(bytes) {
             if (bytes < 1024) return bytes + ' B';
-            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            else if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            else return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
         }
 
-        // Lazy load key list on focus
-        keySelector.addEventListener('focus', updateKeyList);
-
-        // Benchmark function (unchanged except for integration with optimizations)
-        function generatePayload(size) {
-            if (size === 'small') {
-                return JSON.stringify({
-                    name: "John",
-                    age: 30,
-                    data: { value: null, active: true }
-                });
-            } else if (size === 'medium') {
-                const obj = {};
-                for (let i = 0; i < 1000; i++) {
-                    obj[`key${i}`] = { id: i, value: `test${i}`, extra: null };
-                }
-                return JSON.stringify(obj);
-            } else if (size === 'large') {
-                const obj = {};
-                for (let i = 0; i < 100000; i++) {
-                    obj[`key${i}`] = { id: i, value: `test${i}`, extra: null };
-                }
-                return JSON.stringify(obj);
+        function generatePayload(sizeMb) {
+            const sizeBytes = sizeMb * 1024 * 1024;
+            const obj = {};
+            const chars = 'abcdefghijklmnopqrstuvwxyz';
+            let currentSize = 0;
+            let i = 0;
+            while (currentSize < sizeBytes) {
+                const key = 'key' + i;
+                const value = Array(1000).fill(chars[i % 26]).join('');
+                obj[key] = value;
+                currentSize = new TextEncoder().encode(JSON.stringify(obj)).length;
+                i++;
             }
+            return JSON.stringify(obj);
         }
 
-        function benchmarkPayload(text, label) {
-            console.log(`\nBenchmarking ${label} payload (size: ${formatSize(new TextEncoder().encode(text).length)})...`);
-            const startTime = performance.now();
+        function benchmarkPayload(payload) {
+            console.time('Format');
+            editor.textContent = payload;
+            formatJson();
+            console.timeEnd('Format');
 
-            let parseStart = performance.now();
-            let jsonObj = JSON.parse(text);
-            let parseEnd = performance.now();
-            console.log(`  Parse time: ${(parseEnd - parseStart).toFixed(2)}ms`);
+            console.time('Minify');
+            minifyJson();
+            console.timeEnd('Minify');
 
-            let formatStart = performance.now();
-            const formatted = JSON.stringify(jsonObj, null, 2);
-            let formatEnd = performance.now();
-            console.log(`  Format time: ${(formatEnd - formatStart).toFixed(2)}ms`);
+            console.time('Remove Nulls');
+            removeNulls();
+            console.timeEnd('Remove Nulls');
 
-            let minifyStart = performance.now();
-            const minified = JSON.stringify(jsonObj);
-            let minifyEnd = performance.now();
-            console.log(`  Minify time: ${(minifyEnd - minifyStart).toFixed(2)}ms`);
-
-            let highlightStart = performance.now();
-            editor.textContent = formatted;
-            Prism.highlightElement(editor);
-            let highlightEnd = performance.now();
-            console.log(`  Highlight time: ${(highlightEnd - highlightStart).toFixed(2)}ms`);
-
-            let nullStart = performance.now();
-            const nullRemoved = removeNullValues(JSON.parse(JSON.stringify(jsonObj)));
-            let nullEnd = performance.now();
-            console.log(`  Remove Nulls time: ${(nullEnd - nullStart).toFixed(2)}ms`);
-
-            let deleteStart = performance.now();
-            const keys = getAllKeyNames(jsonObj);
-            if (keys.length > 0) {
-                const keyToDelete = keys[0];
-                const deleted = removeKey(JSON.parse(JSON.stringify(jsonObj)), keyToDelete);
-                let deleteEnd = performance.now();
-                console.log(`  Delete Key (${keyToDelete}) time: ${(deleteEnd - deleteStart).toFixed(2)}ms`);
-            } else {
-                console.log('  Delete Key skipped: No keys found');
-            }
-
-            const endTime = performance.now();
-            console.log(`  Total time for ${label}: ${(endTime - startTime).toFixed(2)}ms`);
+            console.time('Highlight');
+            editorElement.highlight();
+            console.timeEnd('Highlight');
         }
 
         function runBenchmark() {
-            const originalContent = editor.textContent;
-            const hasUserContent = originalContent !== 'Enter your JSON here...' && originalContent.trim() !== '';
-            console.log('Starting benchmark suite...');
-
-            benchmarkPayload(generatePayload('small'), 'Small');
-            benchmarkPayload(generatePayload('medium'), 'Medium');
-            benchmarkPayload(generatePayload('large'), 'Large');
-
-            if (hasUserContent) {
-                try {
-                    JSON.parse(originalContent);
-                    benchmarkPayload(originalContent, 'User');
-                } catch (e) {
-                    console.log('\nUser content benchmark skipped: Invalid JSON -', e.message);
-                }
-            }
-
-            editor.textContent = originalContent;
-            if (!isLargePayload) Prism.highlightElement(editor);
-            updateStats();
-
-            console.log('\nBenchmark suite complete. Check console for results.');
-            alert('Benchmark suite complete! Check console (F12) for results.');
+            const sizes = [0.1, 1, 10]; // 100KB, 1MB, 10MB
+            sizes.forEach(size => {
+                console.log(`Benchmarking ${size}MB payload...`);
+                const payload = generatePayload(size);
+                benchmarkPayload(payload);
+            });
         }
 
-        // Initial setup
         if (editor.textContent.trim() === '') {
             editor.textContent = 'Enter your JSON here...';
         }
-        Prism.highlightElement(editor);
+        editorElement.highlight();
         updateStats();
     </script>
 </body>
