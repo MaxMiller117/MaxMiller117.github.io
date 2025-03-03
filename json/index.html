@@ -157,6 +157,13 @@
         const lineCount = document.getElementById('lineCount');
         const dataSize = document.getElementById('dataSize');
 
+        let cachedJson = null;
+        let lastText = '';
+        let highlightTimeout;
+        let statsTimeout;
+        let isLargePayload = false;
+        const LARGE_PAYLOAD_THRESHOLD = 1000000; // 1MB in characters
+
         // Placeholder functionality
         editor.addEventListener('focus', function() {
             if (editor.textContent === 'Enter your JSON here...') {
@@ -171,24 +178,37 @@
             updateStats();
         });
 
-        // Highlight, update keys, and stats on input with cursor preservation
+        // Debounced highlighting and updates on input
         editor.addEventListener('input', function(e) {
+            const text = editor.textContent;
             const selection = window.getSelection();
             const rangeBefore = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
-            const textBefore = editor.textContent;
-            const cursorPositionBefore = rangeBefore ? getCursorPosition(textBefore, rangeBefore) : 0;
+            const cursorPositionBefore = rangeBefore ? getCursorPosition(text, rangeBefore) : 0;
 
-            Prism.highlightElement(editor);
-
-            const textAfter = editor.textContent;
-            if (textBefore === textAfter && rangeBefore) {
-                const newRange = setCursorPosition(editor, cursorPositionBefore);
-                selection.removeAllRanges();
-                selection.addRange(newRange);
+            if (text.length > LARGE_PAYLOAD_THRESHOLD && !isLargePayload) {
+                isLargePayload = true;
+                errorDiv.textContent = 'Large payload detected; real-time highlighting disabled for performance.';
+                errorDiv.style.display = 'block';
+            } else if (text.length <= LARGE_PAYLOAD_THRESHOLD && isLargePayload) {
+                isLargePayload = false;
+                errorDiv.style.display = 'none';
             }
 
-            updateKeyList();
-            updateStats();
+            if (!isLargePayload) {
+                clearTimeout(highlightTimeout);
+                highlightTimeout = setTimeout(() => {
+                    Prism.highlightElement(editor);
+                    const textAfter = editor.textContent;
+                    if (text === textAfter && rangeBefore) {
+                        const newRange = setCursorPosition(editor, cursorPositionBefore);
+                        selection.removeAllRanges();
+                        selection.addRange(newRange);
+                    }
+                }, 300);
+            }
+
+            lastText = ''; // Invalidate cache on edit
+            updateStats(); // Throttled internally
         });
 
         function getCursorPosition(text, range) {
@@ -231,15 +251,23 @@
             return range;
         }
 
+        function getParsedJson(text) {
+            if (text !== lastText || cachedJson === null) {
+                cachedJson = JSON.parse(text);
+                lastText = text;
+            }
+            return cachedJson;
+        }
+
         function formatJson() {
             try {
                 const text = editor.textContent;
                 if (text === 'Enter your JSON here...') return;
                 
-                const jsonObj = JSON.parse(text);
+                const jsonObj = getParsedJson(text);
                 const formatted = JSON.stringify(jsonObj, null, 2);
                 editor.textContent = formatted;
-                Prism.highlightElement(editor);
+                if (!isLargePayload) Prism.highlightElement(editor);
                 updateKeyList();
                 updateStats();
                 errorDiv.style.display = 'none';
@@ -254,10 +282,10 @@
                 const text = editor.textContent;
                 if (text === 'Enter your JSON here...') return;
                 
-                const jsonObj = JSON.parse(text);
+                const jsonObj = getParsedJson(text);
                 const minified = JSON.stringify(jsonObj);
                 editor.textContent = minified;
-                Prism.highlightElement(editor);
+                if (!isLargePayload) Prism.highlightElement(editor);
                 updateKeyList();
                 updateStats();
                 errorDiv.style.display = 'none';
@@ -272,11 +300,11 @@
                 const text = editor.textContent;
                 if (text === 'Enter your JSON here...') return;
                 
-                let jsonObj = JSON.parse(text);
+                let jsonObj = getParsedJson(text);
                 jsonObj = removeNullValues(jsonObj);
-                const formatted = JSON.stringify(jsonObj, null, 2);
-                editor.textContent = formatted;
-                Prism.highlightElement(editor);
+                cachedJson = jsonObj; // Update cache
+                lastText = editor.textContent = JSON.stringify(jsonObj, null, 2);
+                if (!isLargePayload) Prism.highlightElement(editor);
                 updateKeyList();
                 updateStats();
                 errorDiv.style.display = 'none';
@@ -318,7 +346,7 @@
                 const text = editor.textContent;
                 if (text === 'Enter your JSON here...') return;
                 
-                const jsonObj = JSON.parse(text);
+                const jsonObj = getParsedJson(text);
                 const keys = getAllKeyNames(jsonObj);
                 keysDatalist.innerHTML = '';
                 keys.forEach(key => {
@@ -327,7 +355,7 @@
                     keysDatalist.appendChild(option);
                 });
             } catch (e) {
-                // Silent fail - don't update keys if JSON is invalid
+                // Silent fail
             }
         }
 
@@ -358,11 +386,11 @@
                     return;
                 }
                 
-                let jsonObj = JSON.parse(text);
+                let jsonObj = getParsedJson(text);
                 jsonObj = removeKey(jsonObj, keyToDelete);
-                const formatted = JSON.stringify(jsonObj, null, 2);
-                editor.textContent = formatted;
-                Prism.highlightElement(editor);
+                cachedJson = jsonObj; // Update cache
+                lastText = editor.textContent = JSON.stringify(jsonObj, null, 2);
+                if (!isLargePayload) Prism.highlightElement(editor);
                 updateKeyList();
                 updateStats();
                 errorDiv.style.display = 'none';
@@ -386,18 +414,20 @@
         }
 
         function updateStats() {
-            const text = editor.textContent;
-            if (text === 'Enter your JSON here...') {
-                charCount.textContent = '0';
-                lineCount.textContent = '0';
-                dataSize.textContent = '0 B';
-                return;
-            }
-            
-            charCount.textContent = text.length;
-            lineCount.textContent = text.split('\n').length;
-            const bytes = new TextEncoder().encode(text).length;
-            dataSize.textContent = formatSize(bytes);
+            clearTimeout(statsTimeout);
+            statsTimeout = setTimeout(() => {
+                const text = editor.textContent;
+                if (text === 'Enter your JSON here...') {
+                    charCount.textContent = '0';
+                    lineCount.textContent = '0';
+                    dataSize.textContent = '0 B';
+                    return;
+                }
+                charCount.textContent = text.length;
+                lineCount.textContent = text.split('\n').length;
+                const bytes = new TextEncoder().encode(text).length;
+                dataSize.textContent = formatSize(bytes);
+            }, 500);
         }
 
         function formatSize(bytes) {
@@ -406,7 +436,10 @@
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
 
-        // Generate test payloads
+        // Lazy load key list on focus
+        keySelector.addEventListener('focus', updateKeyList);
+
+        // Benchmark function (unchanged except for integration with optimizations)
         function generatePayload(size) {
             if (size === 'small') {
                 return JSON.stringify({
@@ -433,38 +466,32 @@
             console.log(`\nBenchmarking ${label} payload (size: ${formatSize(new TextEncoder().encode(text).length)})...`);
             const startTime = performance.now();
 
-            // Test 1: Parsing
             let parseStart = performance.now();
             let jsonObj = JSON.parse(text);
             let parseEnd = performance.now();
             console.log(`  Parse time: ${(parseEnd - parseStart).toFixed(2)}ms`);
 
-            // Test 2: Formatting
             let formatStart = performance.now();
             const formatted = JSON.stringify(jsonObj, null, 2);
             let formatEnd = performance.now();
             console.log(`  Format time: ${(formatEnd - formatStart).toFixed(2)}ms`);
 
-            // Test 3: Minifying
             let minifyStart = performance.now();
             const minified = JSON.stringify(jsonObj);
             let minifyEnd = performance.now();
             console.log(`  Minify time: ${(minifyEnd - minifyStart).toFixed(2)}ms`);
 
-            // Test 4: Highlighting
             let highlightStart = performance.now();
             editor.textContent = formatted;
             Prism.highlightElement(editor);
             let highlightEnd = performance.now();
             console.log(`  Highlight time: ${(highlightEnd - highlightStart).toFixed(2)}ms`);
 
-            // Test 5: Null Removal
             let nullStart = performance.now();
             const nullRemoved = removeNullValues(JSON.parse(JSON.stringify(jsonObj)));
             let nullEnd = performance.now();
             console.log(`  Remove Nulls time: ${(nullEnd - nullStart).toFixed(2)}ms`);
 
-            // Test 6: Key Deletion (if keys exist)
             let deleteStart = performance.now();
             const keys = getAllKeyNames(jsonObj);
             if (keys.length > 0) {
@@ -485,24 +512,21 @@
             const hasUserContent = originalContent !== 'Enter your JSON here...' && originalContent.trim() !== '';
             console.log('Starting benchmark suite...');
 
-            // Run benchmarks on generated payloads
             benchmarkPayload(generatePayload('small'), 'Small');
             benchmarkPayload(generatePayload('medium'), 'Medium');
             benchmarkPayload(generatePayload('large'), 'Large');
 
-            // Run benchmark on user content if present
             if (hasUserContent) {
                 try {
-                    JSON.parse(originalContent); // Validate user JSON
+                    JSON.parse(originalContent);
                     benchmarkPayload(originalContent, 'User');
                 } catch (e) {
                     console.log('\nUser content benchmark skipped: Invalid JSON -', e.message);
                 }
             }
 
-            // Restore original content
             editor.textContent = originalContent;
-            Prism.highlightElement(editor);
+            if (!isLargePayload) Prism.highlightElement(editor);
             updateStats();
 
             console.log('\nBenchmark suite complete. Check console for results.');
