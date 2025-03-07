@@ -3,8 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JSON Processor with Shadow DOM</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <title>JSON Processor with CodeMirror</title>
+    <link rel="stylesheet" href="https://unpkg.com/codemirror@5.65.2/lib/codemirror.css">
+    <link rel="stylesheet" href="https://unpkg.com/codemirror@5.65.2/addon/fold/foldgutter.css">
+    <link rel="stylesheet" href="https://unpkg.com/codemirror@5.65.2/theme/monokai.css">
+    <script src="https://unpkg.com/codemirror@5.65.2/lib/codemirror.js"></script>
+    <script src="https://unpkg.com/codemirror@5.65.2/mode/javascript/javascript.js"></script>
+    <script src="https://unpkg.com/codemirror@5.65.2/addon/fold/foldcode.js"></script>
+    <script src="https://unpkg.com/codemirror@5.65.2/addon/fold/foldgutter.js"></script>
+    <script src="https://unpkg.com/codemirror@5.65.2/addon/fold/brace-fold.js"></script>
     <style>
         body {
             background-color: #1a1a1a;
@@ -96,6 +103,32 @@
         .stats-panel button {
             margin-top: auto;
         }
+
+        /* CodeMirror Styling Fixes */
+        .json-editor-wrapper {
+            width: 100%;
+            height: 400px; /* Adjust height as needed */
+            border: 1px solid #404040;
+            box-sizing: border-box;
+        }
+
+        .json-editor-wrapper .CodeMirror {
+            width: 100%;
+            height: 100%;
+            margin-left: 0 !important; /* Override large margin */
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        .json-editor-wrapper .CodeMirror-gutters {
+            margin-left: 0;
+            width: auto;
+            background: #2d2d2d; /* Match theme */
+        }
+
+        .json-editor-wrapper .CodeMirror-lines {
+            margin-left: 0 !important;
+        }
     </style>
 </head>
 <body>
@@ -106,7 +139,6 @@
                 <button onclick="minifyJson()">Minify JSON</button>
                 <button onclick="removeNulls()">Remove Nulls</button>
                 <button onclick="copyJson()">Copy</button>
-                <button onclick="highlightJson()">Highlight</button>
             </div>
             <div class="key-controls">
                 <input list="keys" id="keySelector" placeholder="Select or type key...">
@@ -128,61 +160,30 @@
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
     <script>
         class JsonEditor extends HTMLElement {
             constructor() {
                 super();
-                const shadow = this.attachShadow({ mode: 'open' });
-                shadow.innerHTML = `
-                    <style>
-                        #editor {
-                            width: 100%;
-                            height: 400px;
-                            background-color: #2d2d2d;
-                            border: 1px solid #404040;
-                            padding: 10px;
-                            font-family: 'Courier New', Courier, monospace;
-                            white-space: pre-wrap;
-                            overflow-y: auto;
-                            overflow-x: auto;
-                            outline: none;
-                            box-sizing: border-box;
-                            resize: vertical;
-                            color: #ffffff;
-                        }
-                        .token.property {
-                            color: #f8c555;
-                        }
-                        .token.string {
-                            color: #7ec699;
-                        }
-                        .token.number {
-                            color: #f08d49;
-                        }
-                        .token.boolean {
-                            color: #cc99cd;
-                        }
-                        .token.punctuation {
-                            color: #cccccc;
-                        }
-                    </style>
-                    <div id="editor" contenteditable="true" class="language-json"></div>
-                `;
-                this.editor = shadow.querySelector('#editor');
+                this.wrapper = document.createElement('div');
+                this.wrapper.className = 'json-editor-wrapper';
+                this.appendChild(this.wrapper);
+                this.editor = CodeMirror(this.wrapper, {
+                    mode: { name: "javascript", json: true },
+                    theme: "monokai",
+                    lineNumbers: true,
+                    foldGutter: true,
+                    gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+                    extraKeys: { "Ctrl-Q": (cm) => cm.foldCode(cm.getCursor()) }
+                });
+                this.editor.setValue('Enter your JSON here...');
             }
 
             get textContent() {
-                return this.editor.textContent;
+                return this.editor.getValue();
             }
 
             set textContent(value) {
-                this.editor.textContent = value;
-            }
-
-            highlight() {
-                Prism.highlightElement(this.editor);
+                this.editor.setValue(value);
             }
         }
 
@@ -199,57 +200,67 @@
 
         let cachedJson = null;
         let lastText = '';
-        let highlightTimeout;
-        let statsTimeout;
-        let isLargePayload = false;
-        const LARGE_PAYLOAD_THRESHOLD = 100000;
 
-        editor.addEventListener('focus', function() {
-            if (editor.textContent === 'Enter your JSON here...') {
-                editor.textContent = '';
+        editor.on('change', () => {
+            updateStats();
+        });
+
+        editor.on('focus', () => {
+            if (editor.getValue() === 'Enter your JSON here...') {
+                editor.setValue('');
             }
         });
 
-        editor.addEventListener('blur', function() {
-            if (editor.textContent.trim() === '') {
-                editor.textContent = 'Enter your JSON here...';
+        editor.on('blur', () => {
+            if (editor.getValue().trim() === '') {
+                editor.setValue('Enter your JSON here...');
             }
             updateStats();
         });
 
-        editor.addEventListener('input', function() {
-            const text = editor.textContent;
-            if (text.length > LARGE_PAYLOAD_THRESHOLD) {
-                isLargePayload = true;
-                errorDiv.textContent = 'Large payload detected; real-time highlighting disabled.';
-                errorDiv.style.display = 'block';
+        function updateStats() {
+            const text = editorElement.textContent;
+            if (text === 'Enter your JSON here...') {
+                charCount.textContent = '0';
+                lineCount.textContent = '0';
+                dataSize.textContent = '0 B';
+                return;
+            }
+            charCount.textContent = text.length;
+            lineCount.textContent = editor.lineCount();
+            const bytes = new TextEncoder().encode(text).length;
+            dataSize.textContent = formatSize(bytes);
+            if (text !== lastText) {
+                try {
+                    cachedJson = JSON.parse(text);
+                    updateKeyList(cachedJson);
+                    lastText = text;
+                } catch (e) {
+                    cachedJson = null;
+                }
+            }
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) {
+                return bytes + ' B';
+            } else if (bytes < 1024 * 1024) {
+                return (bytes / 1024).toFixed(2) + ' KB';
             } else {
-                isLargePayload = false;
-                errorDiv.style.display = 'none';
-                clearTimeout(highlightTimeout);
-                highlightTimeout = setTimeout(() => {
-                    editorElement.highlight();
-                }, 300);
+                return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
             }
-            lastText = '';
-            updateStats();
-        });
-
-        function highlightJson() {
-            editorElement.highlight();
         }
 
         function formatJson() {
-            const text = editor.textContent;
+            const text = editorElement.textContent;
             if (text === 'Enter your JSON here...') {
                 return;
             }
             try {
                 const parsed = JSON.parse(text);
-                editor.textContent = JSON.stringify(parsed, null, 2);
-                editorElement.highlight();
+                editorElement.textContent = JSON.stringify(parsed, null, 2);
                 cachedJson = parsed;
-                lastText = editor.textContent;
+                lastText = editorElement.textContent;
                 updateStats();
                 errorDiv.style.display = 'none';
             } catch (e) {
@@ -259,16 +270,15 @@
         }
 
         function minifyJson() {
-            const text = editor.textContent;
+            const text = editorElement.textContent;
             if (text === 'Enter your JSON here...') {
                 return;
             }
             try {
                 const parsed = JSON.parse(text);
-                editor.textContent = JSON.stringify(parsed);
-                editorElement.highlight();
+                editorElement.textContent = JSON.stringify(parsed);
                 cachedJson = parsed;
-                lastText = editor.textContent;
+                lastText = editorElement.textContent;
                 updateStats();
                 errorDiv.style.display = 'none';
             } catch (e) {
@@ -278,17 +288,16 @@
         }
 
         function removeNulls() {
-            const text = editor.textContent;
+            const text = editorElement.textContent;
             if (text === 'Enter your JSON here...') {
                 return;
             }
             try {
                 const parsed = JSON.parse(text);
                 const cleaned = removeNullValues(parsed);
-                editor.textContent = JSON.stringify(cleaned, null, 2);
-                editorElement.highlight();
+                editorElement.textContent = JSON.stringify(cleaned, null, 2);
                 cachedJson = cleaned;
-                lastText = editor.textContent;
+                lastText = editorElement.textContent;
                 updateStats();
                 errorDiv.style.display = 'none';
             } catch (e) {
@@ -313,7 +322,7 @@
         }
 
         function copyJson() {
-            const text = editor.textContent;
+            const text = editorElement.textContent;
             if (text === 'Enter your JSON here...') {
                 return;
             }
@@ -365,10 +374,9 @@
             try {
                 const newJson = JSON.parse(JSON.stringify(cachedJson));
                 deleteAllOccurrences(newJson, keyToDelete);
-                editor.textContent = JSON.stringify(newJson, null, 2);
-                editorElement.highlight();
+                editorElement.textContent = JSON.stringify(newJson, null, 2);
                 cachedJson = newJson;
-                lastText = editor.textContent;
+                lastText = editorElement.textContent;
                 updateStats();
                 updateKeyList(cachedJson);
                 keySelector.value = '';
@@ -376,52 +384,6 @@
             } catch (e) {
                 errorDiv.textContent = 'Error deleting key: ' + e.message;
                 errorDiv.style.display = 'block';
-            }
-        }
-
-        function countLines(text) {
-            let count = 1;
-            for (let i = 0; i < text.length; i++) {
-                if (text[i] === '\n') {
-                    count++;
-                }
-            }
-            return count;
-        }
-
-        function updateStats() {
-            clearTimeout(statsTimeout);
-            statsTimeout = setTimeout(() => {
-                const text = editor.textContent;
-                if (text === 'Enter your JSON here...') {
-                    charCount.textContent = '0';
-                    lineCount.textContent = '0';
-                    dataSize.textContent = '0 B';
-                    return;
-                }
-                charCount.textContent = text.length;
-                lineCount.textContent = countLines(text);
-                const bytes = new TextEncoder().encode(text).length;
-                dataSize.textContent = formatSize(bytes);
-                if (text !== lastText) {
-                    try {
-                        cachedJson = JSON.parse(text);
-                        updateKeyList(cachedJson);
-                        lastText = text;
-                    } catch (e) {
-                        cachedJson = null;
-                    }
-                }
-            }, 500);
-        }
-
-        function formatSize(bytes) {
-            if (bytes < 1024) {
-                return bytes + ' B';
-            } else if (bytes < 1024 * 1024) {
-                return (bytes / 1024).toFixed(2) + ' KB';
-            } else {
-                return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
             }
         }
 
@@ -444,8 +406,11 @@
         }
 
         function benchmarkPayload(payload) {
+            console.time('Set Value');
+            editorElement.textContent = payload;
+            console.timeEnd('Set Value');
+
             console.time('Format');
-            editor.textContent = payload;
             formatJson();
             console.timeEnd('Format');
 
@@ -456,10 +421,6 @@
             console.time('Remove Nulls');
             removeNulls();
             console.timeEnd('Remove Nulls');
-
-            console.time('Highlight');
-            editorElement.highlight();
-            console.timeEnd('Highlight');
         }
 
         function runBenchmark() {
@@ -475,10 +436,6 @@
             });
         }
 
-        if (editor.textContent.trim() === '') {
-            editor.textContent = 'Enter your JSON here...';
-        }
-        editorElement.highlight();
         updateStats();
     </script>
 </body>
