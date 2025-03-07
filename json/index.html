@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JSON Processor with Shadow DOM</title>
-    <!-- Prism CSS -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <style>
         body {
@@ -129,7 +128,6 @@
         </div>
     </div>
 
-    <!-- Prism JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
     <script>
@@ -180,7 +178,6 @@
 
         customElements.define('json-editor', JsonEditor);
 
-        // References
         const editorElement = document.getElementById('editor');
         const editor = editorElement.editor;
         const errorDiv = document.getElementById('error');
@@ -195,7 +192,7 @@
         let highlightTimeout;
         let statsTimeout;
         let isLargePayload = false;
-        const LARGE_PAYLOAD_THRESHOLD = 10000;
+        const LARGE_PAYLOAD_THRESHOLD = 100000;
 
         editor.addEventListener('focus', function() {
             if (editor.textContent === 'Enter your JSON here...') {
@@ -214,7 +211,7 @@
             const text = editor.textContent;
             if (text.length > LARGE_PAYLOAD_THRESHOLD) {
                 isLargePayload = true;
-                errorDiv.textContent = 'Large payload detected; real-time highlighting disabled. Click "Highlight" to update.';
+                errorDiv.textContent = 'Large payload detected; real-time highlighting disabled.';
                 errorDiv.style.display = 'block';
             } else {
                 isLargePayload = false;
@@ -389,6 +386,14 @@
             }
         }
 
+        function countLines(text) {
+            let count = 1;
+            for (let i = 0; i < text.length; i++) {
+                if (text[i] === '\n') count++;
+            }
+            return count;
+        }
+
         function updateStats() {
             clearTimeout(statsTimeout);
             statsTimeout = setTimeout(() => {
@@ -400,7 +405,7 @@
                     return;
                 }
                 charCount.textContent = text.length;
-                lineCount.textContent = 'N/A';
+                lineCount.textContent = countLines(text);
                 const bytes = new TextEncoder().encode(text).length;
                 dataSize.textContent = formatSize(bytes);
 
@@ -422,18 +427,20 @@
             else return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
         }
 
-        function generatePayload(sizeMb) {
-            const sizeBytes = sizeMb * 1024 * 1024;
+        function generatePayload(targetSizeBytes) {
             const obj = {};
-            const chars = 'abcdefghijklmnopqrstuvwxyz';
+            const value = 'a'.repeat(1000);
             let currentSize = 0;
             let i = 0;
-            while (currentSize < sizeBytes) {
-                const key = 'key' + i;
-                const value = Array(1000).fill(chars[i % 26]).join('');
-                obj[key] = value;
-                currentSize = new TextEncoder().encode(JSON.stringify(obj)).length;
+            while (currentSize < targetSizeBytes) {
+                obj['key' + i] = value;
                 i++;
+                currentSize = JSON.stringify(obj).length;
+            }
+            while (currentSize > targetSizeBytes && i > 0) {
+                delete obj['key' + (i - 1)];
+                i--;
+                currentSize = JSON.stringify(obj).length;
             }
             return JSON.stringify(obj);
         }
@@ -458,10 +465,14 @@
         }
 
         function runBenchmark() {
-            const sizes = [0.1, 1, 10]; // 100KB, 1MB, 10MB
+            const sizes = [
+                { name: 'small', bytes: 1024 },
+                { name: 'medium', bytes: 100 * 1024 },
+                { name: 'large', bytes: 1024 * 1024 }
+            ];
             sizes.forEach(size => {
-                console.log(`Benchmarking ${size}MB payload...`);
-                const payload = generatePayload(size);
+                console.log(`Benchmarking ${size.name} payload (${size.bytes} bytes)...`);
+                const payload = generatePayload(size.bytes);
                 benchmarkPayload(payload);
             });
         }
