@@ -15,13 +15,13 @@
             display: flex;
             min-height: 100vh;
         }
-        
+
         .container {
             display: flex;
             width: 100%;
             gap: 15px;
         }
-        
+
         .left-panel {
             width: 180px;
             display: flex;
@@ -30,13 +30,13 @@
             padding: 10px;
             flex-shrink: 0;
         }
-        
+
         .buttons, .key-controls {
             display: flex;
             flex-direction: column;
             gap: 8px;
         }
-        
+
         button {
             background-color: #4a4a4a;
             color: #ffffff;
@@ -45,11 +45,11 @@
             cursor: pointer;
             transition: background-color 0.3s;
         }
-        
+
         button:hover {
             background-color: #606060;
         }
-        
+
         .main-panel {
             flex: 1;
             display: flex;
@@ -58,13 +58,13 @@
             padding: 10px;
             min-width: 0;
         }
-        
+
         #error {
             color: #ff4444;
             margin-top: 5px;
             display: none;
         }
-        
+
         #keySelector {
             background-color: #2d2d2d;
             color: #ffffff;
@@ -73,7 +73,7 @@
             width: 100%;
             box-sizing: border-box;
         }
-        
+
         .stats-panel {
             width: 250px;
             background-color: #2d2d2d;
@@ -84,15 +84,15 @@
             flex-direction: column;
             gap: 10px;
         }
-        
+
         .stats-panel h3 {
             margin: 0;
         }
-        
+
         .stats-panel p {
             margin: 5px 0;
         }
-        
+
         .stats-panel button {
             margin-top: auto;
         }
@@ -152,11 +152,21 @@
                             resize: vertical;
                             color: #ffffff;
                         }
-                        .token.property { color: #f8c555; }
-                        .token.string { color: #7ec699; }
-                        .token.number { color: #f08d49; }
-                        .token.boolean { color: #cc99cd; }
-                        .token.punctuation { color: #cccccc; }
+                        .token.property {
+                            color: #f8c555;
+                        }
+                        .token.string {
+                            color: #7ec699;
+                        }
+                        .token.number {
+                            color: #f08d49;
+                        }
+                        .token.boolean {
+                            color: #cc99cd;
+                        }
+                        .token.punctuation {
+                            color: #cccccc;
+                        }
                     </style>
                     <div id="editor" contenteditable="true" class="language-json"></div>
                 `;
@@ -231,7 +241,9 @@
 
         function formatJson() {
             const text = editor.textContent;
-            if (text === 'Enter your JSON here...') return;
+            if (text === 'Enter your JSON here...') {
+                return;
+            }
             try {
                 const parsed = JSON.parse(text);
                 editor.textContent = JSON.stringify(parsed, null, 2);
@@ -248,7 +260,9 @@
 
         function minifyJson() {
             const text = editor.textContent;
-            if (text === 'Enter your JSON here...') return;
+            if (text === 'Enter your JSON here...') {
+                return;
+            }
             try {
                 const parsed = JSON.parse(text);
                 editor.textContent = JSON.stringify(parsed);
@@ -265,7 +279,9 @@
 
         function removeNulls() {
             const text = editor.textContent;
-            if (text === 'Enter your JSON here...') return;
+            if (text === 'Enter your JSON here...') {
+                return;
+            }
             try {
                 const parsed = JSON.parse(text);
                 const cleaned = removeNullValues(parsed);
@@ -298,14 +314,32 @@
 
         function copyJson() {
             const text = editor.textContent;
-            if (text === 'Enter your JSON here...') return;
+            if (text === 'Enter your JSON here...') {
+                return;
+            }
             navigator.clipboard.writeText(text).then(() => {
                 alert('JSON copied to clipboard!');
             });
         }
 
+        function getUniqueKeys(obj) {
+            const keys = new Set();
+            function traverse(o) {
+                if (Array.isArray(o)) {
+                    o.forEach(item => traverse(item));
+                } else if (o && typeof o === 'object') {
+                    Object.keys(o).forEach(key => {
+                        keys.add(key);
+                        traverse(o[key]);
+                    });
+                }
+            }
+            traverse(obj);
+            return Array.from(keys);
+        }
+
         function updateKeyList(jsonObj) {
-            const keys = getAllKeyNames(jsonObj);
+            const keys = getUniqueKeys(jsonObj);
             keysDatalist.innerHTML = '';
             keys.forEach(key => {
                 const option = document.createElement('option');
@@ -314,39 +348,30 @@
             });
         }
 
-        function getAllKeyNames(obj, prefix = '') {
-            let keys = new Set();
+        function deleteAllOccurrences(obj, keyToDelete) {
             if (Array.isArray(obj)) {
-                obj.forEach((item, index) => {
-                    const newPrefix = `${prefix}[${index}]`;
-                    if (typeof item === 'object' && item !== null) {
-                        getAllKeyNames(item, newPrefix).forEach(k => keys.add(k));
-                    }
-                });
+                obj.forEach(item => deleteAllOccurrences(item, keyToDelete));
             } else if (obj && typeof obj === 'object') {
-                for (const [key, value] of Object.entries(obj)) {
-                    const fullKey = prefix ? `${prefix}.${key}` : key;
-                    keys.add(fullKey);
-                    if (typeof value === 'object' && value !== null) {
-                        getAllKeyNames(value, fullKey).forEach(k => keys.add(k));
-                    }
-                }
+                delete obj[keyToDelete];
+                Object.values(obj).forEach(value => deleteAllOccurrences(value, keyToDelete));
             }
-            return Array.from(keys);
         }
 
         function deleteKey() {
-            const keyPath = keySelector.value;
-            if (!keyPath || !cachedJson) return;
+            const keyToDelete = keySelector.value;
+            if (!keyToDelete || !cachedJson) {
+                return;
+            }
             try {
                 const newJson = JSON.parse(JSON.stringify(cachedJson));
-                removeKey(newJson, keyPath.split('.'));
+                deleteAllOccurrences(newJson, keyToDelete);
                 editor.textContent = JSON.stringify(newJson, null, 2);
                 editorElement.highlight();
                 cachedJson = newJson;
                 lastText = editor.textContent;
                 updateStats();
                 updateKeyList(cachedJson);
+                keySelector.value = '';
                 errorDiv.style.display = 'none';
             } catch (e) {
                 errorDiv.textContent = 'Error deleting key: ' + e.message;
@@ -354,42 +379,12 @@
             }
         }
 
-        function removeKey(obj, keyPath) {
-            if (keyPath.length === 0) return;
-            let current = obj;
-            for (let i = 0; i < keyPath.length - 1; i++) {
-                let key = keyPath[i];
-                if (key.includes('[')) {
-                    const arrayMatch = key.match(/^(.*?)\[(\d+)\]$/);
-                    if (arrayMatch) {
-                        const arrayKey = arrayMatch[1] || '';
-                        const index = parseInt(arrayMatch[2], 10);
-                        if (arrayKey) current = current[arrayKey];
-                        current = current[index];
-                    }
-                } else {
-                    current = current[key];
-                }
-                if (!current) return;
-            }
-            const lastKey = keyPath[keyPath.length - 1];
-            if (lastKey.includes('[')) {
-                const arrayMatch = lastKey.match(/^(.*?)\[(\d+)\]$/);
-                if (arrayMatch) {
-                    const arrayKey = arrayMatch[1] || '';
-                    const index = parseInt(arrayMatch[2], 10);
-                    if (arrayKey) current = current[arrayKey];
-                    if (Array.isArray(current)) current.splice(index, 1);
-                }
-            } else {
-                delete current[lastKey];
-            }
-        }
-
         function countLines(text) {
             let count = 1;
             for (let i = 0; i < text.length; i++) {
-                if (text[i] === '\n') count++;
+                if (text[i] === '\n') {
+                    count++;
+                }
             }
             return count;
         }
@@ -408,7 +403,6 @@
                 lineCount.textContent = countLines(text);
                 const bytes = new TextEncoder().encode(text).length;
                 dataSize.textContent = formatSize(bytes);
-
                 if (text !== lastText) {
                     try {
                         cachedJson = JSON.parse(text);
@@ -422,9 +416,13 @@
         }
 
         function formatSize(bytes) {
-            if (bytes < 1024) return bytes + ' B';
-            else if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-            else return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+            if (bytes < 1024) {
+                return bytes + ' B';
+            } else if (bytes < 1024 * 1024) {
+                return (bytes / 1024).toFixed(2) + ' KB';
+            } else {
+                return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+            }
         }
 
         function generatePayload(targetSizeBytes) {
