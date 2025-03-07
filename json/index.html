@@ -13,19 +13,23 @@
     <script src="https://unpkg.com/codemirror@5.65.2/addon/fold/foldgutter.js"></script>
     <script src="https://unpkg.com/codemirror@5.65.2/addon/fold/brace-fold.js"></script>
     <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             background-color: #1a1a1a;
             color: #ffffff;
             font-family: Arial, sans-serif;
-            padding: 0;
-            margin: 0;
             display: flex;
-            min-height: 100vh;
         }
 
         .container {
             display: flex;
             width: 100%;
+            height: 98vh;
             gap: 15px;
         }
 
@@ -64,6 +68,11 @@
             gap: 10px;
             padding: 10px;
             min-width: 0;
+            height: 100%;
+        }
+
+        .main-panel h1 {
+            margin: 0;
         }
 
         #error {
@@ -104,18 +113,25 @@
             margin-top: auto;
         }
 
-        /* CodeMirror Styling Fixes */
+        json-editor {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
         .json-editor-wrapper {
             width: 100%;
-            height: 400px; /* Adjust height as needed */
+            flex: 1;
             border: 1px solid #404040;
             box-sizing: border-box;
+            overflow: auto;
         }
 
         .json-editor-wrapper .CodeMirror {
             width: 100%;
             height: 100%;
-            margin-left: 0 !important; /* Override large margin */
+            margin-left: 0 !important;
             padding: 0;
             box-sizing: border-box;
         }
@@ -123,7 +139,7 @@
         .json-editor-wrapper .CodeMirror-gutters {
             margin-left: 0;
             width: auto;
-            background: #2d2d2d; /* Match theme */
+            background: #2d2d2d;
         }
 
         .json-editor-wrapper .CodeMirror-lines {
@@ -201,20 +217,12 @@
         let cachedJson = null;
         let lastText = '';
 
-        editor.on('change', () => {
-            updateStats();
-        });
-
+        editor.on('change', () => updateStats());
         editor.on('focus', () => {
-            if (editor.getValue() === 'Enter your JSON here...') {
-                editor.setValue('');
-            }
+            if (editor.getValue() === 'Enter your JSON here...') editor.setValue('');
         });
-
         editor.on('blur', () => {
-            if (editor.getValue().trim() === '') {
-                editor.setValue('Enter your JSON here...');
-            }
+            if (editor.getValue().trim() === '') editor.setValue('Enter your JSON here...');
             updateStats();
         });
 
@@ -242,20 +250,14 @@
         }
 
         function formatSize(bytes) {
-            if (bytes < 1024) {
-                return bytes + ' B';
-            } else if (bytes < 1024 * 1024) {
-                return (bytes / 1024).toFixed(2) + ' KB';
-            } else {
-                return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-            }
+            if (bytes < 1024) return bytes + ' B';
+            else if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            else return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
         }
 
         function formatJson() {
             const text = editorElement.textContent;
-            if (text === 'Enter your JSON here...') {
-                return;
-            }
+            if (text === 'Enter your JSON here...') return;
             try {
                 const parsed = JSON.parse(text);
                 editorElement.textContent = JSON.stringify(parsed, null, 2);
@@ -271,9 +273,7 @@
 
         function minifyJson() {
             const text = editorElement.textContent;
-            if (text === 'Enter your JSON here...') {
-                return;
-            }
+            if (text === 'Enter your JSON here...') return;
             try {
                 const parsed = JSON.parse(text);
                 editorElement.textContent = JSON.stringify(parsed);
@@ -289,9 +289,7 @@
 
         function removeNulls() {
             const text = editorElement.textContent;
-            if (text === 'Enter your JSON here...') {
-                return;
-            }
+            if (text === 'Enter your JSON here...') return;
             try {
                 const parsed = JSON.parse(text);
                 const cleaned = removeNullValues(parsed);
@@ -312,9 +310,7 @@
             } else if (obj && typeof obj === 'object') {
                 const result = {};
                 for (const [key, value] of Object.entries(obj)) {
-                    if (value !== null) {
-                        result[key] = removeNullValues(value);
-                    }
+                    if (value !== null) result[key] = removeNullValues(value);
                 }
                 return result;
             }
@@ -323,20 +319,15 @@
 
         function copyJson() {
             const text = editorElement.textContent;
-            if (text === 'Enter your JSON here...') {
-                return;
-            }
-            navigator.clipboard.writeText(text).then(() => {
-                alert('JSON copied to clipboard!');
-            });
+            if (text === 'Enter your JSON here...') return;
+            navigator.clipboard.writeText(text).then(() => alert('JSON copied to clipboard!'));
         }
 
         function getUniqueKeys(obj) {
             const keys = new Set();
             function traverse(o) {
-                if (Array.isArray(o)) {
-                    o.forEach(item => traverse(item));
-                } else if (o && typeof o === 'object') {
+                if (Array.isArray(o)) o.forEach(item => traverse(item));
+                else if (o && typeof o === 'object') {
                     Object.keys(o).forEach(key => {
                         keys.add(key);
                         traverse(o[key]);
@@ -368,9 +359,7 @@
 
         function deleteKey() {
             const keyToDelete = keySelector.value;
-            if (!keyToDelete || !cachedJson) {
-                return;
-            }
+            if (!keyToDelete || !cachedJson) return;
             try {
                 const newJson = JSON.parse(JSON.stringify(cachedJson));
                 deleteAllOccurrences(newJson, keyToDelete);
@@ -409,15 +398,12 @@
             console.time('Set Value');
             editorElement.textContent = payload;
             console.timeEnd('Set Value');
-
             console.time('Format');
             formatJson();
             console.timeEnd('Format');
-
             console.time('Minify');
             minifyJson();
             console.timeEnd('Minify');
-
             console.time('Remove Nulls');
             removeNulls();
             console.timeEnd('Remove Nulls');
