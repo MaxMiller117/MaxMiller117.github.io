@@ -12,6 +12,11 @@
     <script src="https://unpkg.com/codemirror@5.65.2/addon/fold/foldcode.js"></script>
     <script src="https://unpkg.com/codemirror@5.65.2/addon/fold/foldgutter.js"></script>
     <script src="https://unpkg.com/codemirror@5.65.2/addon/fold/brace-fold.js"></script>
+    <!-- Search addons -->
+    <script src="https://unpkg.com/codemirror@5.65.2/addon/search/search.js"></script>
+    <script src="https://unpkg.com/codemirror@5.65.2/addon/search/searchcursor.js"></script>
+    <script src="https://unpkg.com/codemirror@5.65.2/addon/dialog/dialog.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/codemirror@5.65.2/addon/dialog/dialog.css">
     <style>
         html, body {
             height: 100%;
@@ -48,7 +53,7 @@
             gap: 8px;
         }
 
-        button {
+        button, input[type="file"] {
             background-color: #4a4a4a;
             color: #ffffff;
             border: none;
@@ -57,8 +62,18 @@
             transition: background-color 0.3s;
         }
 
-        button:hover {
+        button:hover:not(:disabled), input[type="file"]:hover {
             background-color: #606060;
+        }
+
+        button:disabled {
+            background-color: #333;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        input[type="file"] {
+            padding: 6px;
         }
 
         .main-panel {
@@ -155,6 +170,9 @@
                 <button onclick="minifyJson()">Minify JSON</button>
                 <button onclick="removeNulls()">Remove Nulls</button>
                 <button onclick="copyJson()">Copy</button>
+                <button onclick="document.getElementById('fileInput').click()">Open File</button>
+                <input type="file" id="fileInput" accept=".json,.txt" style="display:none">
+                <button id="saveButton" onclick="saveFile()">Save File</button>
             </div>
             <div class="key-controls">
                 <input list="keys" id="keySelector" placeholder="Select or type key...">
@@ -189,7 +207,10 @@
                     lineNumbers: true,
                     foldGutter: true,
                     gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
-                    extraKeys: { "Ctrl-Q": (cm) => cm.foldCode(cm.getCursor()) }
+                    extraKeys: {
+                        "Ctrl-Q": (cm) => cm.foldCode(cm.getCursor()),
+                        "Ctrl-F": "findPersistent"
+                    }
                 });
                 this.editor.setValue('Enter your JSON here...');
             }
@@ -213,9 +234,99 @@
         const charCount = document.getElementById('charCount');
         const lineCount = document.getElementById('lineCount');
         const dataSize = document.getElementById('dataSize');
+        const fileInput = document.getElementById('fileInput');
+        const saveButton = document.getElementById('saveButton');
 
         let cachedJson = null;
         let lastText = '';
+
+        // File handling - Open
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    editorElement.textContent = event.target.result;
+                    updateStats();
+                    errorDiv.style.display = 'none';
+                } catch (err) {
+                    errorDiv.textContent = 'Error reading file: ' + err.message;
+                    errorDiv.style.display = 'block';
+                }
+            };
+            reader.onerror = () => {
+                errorDiv.textContent = 'Failed to read file';
+                errorDiv.style.display = 'block';
+            };
+            reader.readAsText(file);
+            fileInput.value = '';
+        });
+
+        // File handling - Save (with File System Access API + fallback)
+        async function saveFile() {
+            const content = editorElement.textContent;
+            if (content === 'Enter your JSON here...') {
+                alert('Nothing to save.');
+                return;
+            }
+
+            // Dynamic filename with date
+            const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const suggestedName = `json-export-${today}.json`;
+
+            const blob = new Blob([content], { type: 'application/json' });
+
+            // Show saving state
+            const originalText = saveButton.textContent;
+            saveButton.textContent = 'Saving...';
+            saveButton.disabled = true;
+
+            if ('showSaveFilePicker' in window) {
+                try {
+                    const options = {
+                        suggestedName: suggestedName,
+                        types: [{
+                            description: 'JSON Files',
+                            accept: {
+                                'application/json': ['.json'],
+                                'text/plain': ['.json', '.txt']
+                            }
+                        }]
+                    };
+
+                    const handle = await window.showSaveFilePicker(options);
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+
+                    alert('File saved successfully!');
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        console.error(err);
+                        errorDiv.textContent = 'Save failed: ' + err.message;
+                        errorDiv.style.display = 'block';
+                    }
+                }
+            } else {
+                // Fallback
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = suggestedName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                alert('File download started.\n\nYour browser does not support the native "Save As" dialog. The file was saved to your default download location.');
+            }
+
+            // Restore button state
+            saveButton.textContent = originalText;
+            saveButton.disabled = false;
+        }
 
         editor.on('change', () => updateStats());
         editor.on('focus', () => {
@@ -251,8 +362,8 @@
 
         function formatSize(bytes) {
             if (bytes < 1024) return bytes + ' B';
-            else if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-            else return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
         }
 
         function formatJson() {
@@ -306,8 +417,9 @@
 
         function removeNullValues(obj) {
             if (Array.isArray(obj)) {
-                return obj.filter(item => item !== null).map(item => removeNullValues(item));
-            } else if (obj && typeof obj === 'object') {
+                return obj.filter(item => item !== null).map(removeNullValues);
+            }
+            if (obj && typeof obj === 'object') {
                 const result = {};
                 for (const [key, value] of Object.entries(obj)) {
                     if (value !== null) result[key] = removeNullValues(value);
@@ -326,7 +438,7 @@
         function getUniqueKeys(obj) {
             const keys = new Set();
             function traverse(o) {
-                if (Array.isArray(o)) o.forEach(item => traverse(item));
+                if (Array.isArray(o)) o.forEach(traverse);
                 else if (o && typeof o === 'object') {
                     Object.keys(o).forEach(key => {
                         keys.add(key);
@@ -353,12 +465,12 @@
                 obj.forEach(item => deleteAllOccurrences(item, keyToDelete));
             } else if (obj && typeof obj === 'object') {
                 delete obj[keyToDelete];
-                Object.values(obj).forEach(value => deleteAllOccurrences(value, keyToDelete));
+                Object.values(obj).forEach(v => deleteAllOccurrences(v, keyToDelete));
             }
         }
 
         function deleteKey() {
-            const keyToDelete = keySelector.value;
+            const keyToDelete = keySelector.value.trim();
             if (!keyToDelete || !cachedJson) return;
             try {
                 const newJson = JSON.parse(JSON.stringify(cachedJson));
@@ -387,8 +499,7 @@
                 currentSize = JSON.stringify(obj).length;
             }
             while (currentSize > targetSizeBytes && i > 0) {
-                delete obj['key' + (i - 1)];
-                i--;
+                delete obj['key' + (--i)];
                 currentSize = JSON.stringify(obj).length;
             }
             return JSON.stringify(obj);
@@ -398,12 +509,15 @@
             console.time('Set Value');
             editorElement.textContent = payload;
             console.timeEnd('Set Value');
+
             console.time('Format');
             formatJson();
             console.timeEnd('Format');
+
             console.time('Minify');
             minifyJson();
             console.timeEnd('Minify');
+
             console.time('Remove Nulls');
             removeNulls();
             console.timeEnd('Remove Nulls');
@@ -411,9 +525,9 @@
 
         function runBenchmark() {
             const sizes = [
-                { name: 'small', bytes: 1024 },
+                { name: 'small',  bytes: 1024 },
                 { name: 'medium', bytes: 100 * 1024 },
-                { name: 'large', bytes: 1024 * 1024 }
+                { name: 'large',  bytes: 1024 * 1024 }
             ];
             sizes.forEach(size => {
                 console.log(`Benchmarking ${size.name} payload (${size.bytes} bytes)...`);
